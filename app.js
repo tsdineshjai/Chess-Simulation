@@ -13,7 +13,7 @@ const chess = new Chess();
 
 let players = {};
 
-let currentPlayer = "W";
+let currentPlayer = "w";
 
 app.set("view engine", "ejs");
 app.use(express.static(path.join(__dirname, "public")));
@@ -26,13 +26,58 @@ server.listen(3000, () => {
 	console.log(`ypu are listening on port 3000`);
 });
 
-io.on("connection", function (uniqueSocket) {
+io.on("connection", (uniqueSocket) => {
 	console.log("connected");
-});
 
-io.on("connection", (socket) => {
-	socket.on("chat message", (msg) => {
-		console.log("Thank you i have received the message: " + msg);
+	console.log(uniqueSocket.id);
+
+	if (!players.white) {
+		players.white = uniqueSocket.id;
+		uniqueSocket.emit("playerRole", "w");
+	} else if (!players.black) {
+		players.black = uniqueSocket.id;
+		uniqueSocket.emit("playerRole", "b");
+	} else {
+		uniqueSocket.emit("spectatorRole");
+	}
+
+	//handling disconnection
+
+	uniqueSocket.on("disconnection", () => {
+		if (uniqueSocket.id === players.white) {
+			delete players.white;
+		} else if (uniqueSocket.id === players.black) {
+			delete players.black;
+		}
+	});
+
+	//listening for the client aka player movments
+
+	uniqueSocket.on("move", (move) => {
+		try {
+			//making sure the right player makes the action
+			if (chess.turn() === "w" && uniqueSocket.id !== players.white) return;
+			if (chess.turn() === "b" && uniqueSocket.id !== players.black) return;
+
+			//if the right player is mkaking moves then allow tthe move
+
+			const result = chess.move(move);
+
+			//if the move is valid, then the result will be true
+			//for eg: if an bishop which should move diagonal , moves 1step like a sepoy. its a invalid move
+
+			if (result) {
+				currentPlayer = chess.turn(); //shifting the turn to the other player
+				io.emit("move", move);
+				io.emit("boardState", chess.fen()); //snapshot of current board state
+			} else {
+				console.log(`invalid move`, move);
+				uniqueSocket.emit("invalidMove", move);
+			}
+		} catch (err) {
+			console.log(err);
+			uniqueSocket.emit("invalidMove", move);
+		}
 	});
 });
 
